@@ -101,10 +101,13 @@ class FreeAnchor3DHead(Anchor3DHead):
         box_prob = []
         num_pos = 0
         positive_losses = []
-        for _, (anchors_, gt_labels_, gt_bboxes_, cls_prob_, bbox_preds_,
-                dir_cls_preds_) in enumerate(
+        for batch_idx, (anchors_, gt_labels_, gt_bboxes_, cls_prob_, _,
+                        dir_cls_preds_) in enumerate(
                     zip(anchors, gt_labels, gt_bboxes, cls_prob, bbox_preds,
                         dir_cls_preds)):
+            # added 9/8 to address "unbindbackwards" problem L206
+            # https://github.com/pytorch/vision/issues/3025#issuecomment-729964602  # noqa: E501
+            bbox_preds_ = bbox_preds[batch_idx]
 
             gt_bboxes_ = gt_bboxes_.tensor.to(anchors_.device)
 

@@ -7,6 +7,7 @@ import torch
 from mmcv.utils import print_log
 from os import path as osp
 
+from mmseg.core import add_prefix
 from mmdet.datasets import DATASETS
 from ..core import show_multi_modality_result, show_result
 from ..core.bbox import (Box3DMode, CameraInstance3DBoxes, Coord3DMode,
@@ -48,6 +49,9 @@ class KittiDataset(Custom3DDataset):
             Defaults to False.
         pcd_limit_range (list): The range of point cloud used to filter
             invalid predicted boxes. Default: [0, -40, -3, 70.4, 40, 0.0].
+        completely_remove_other_classes (bool): by default, replaces
+            ignored classes with -1. This completely removes them instead
+            during training.
     """
     CLASSES = ('car', 'pedestrian', 'cyclist')
 
@@ -62,7 +66,9 @@ class KittiDataset(Custom3DDataset):
                  box_type_3d='LiDAR',
                  filter_empty_gt=True,
                  test_mode=False,
-                 pcd_limit_range=[0, -40, -3, 70.4, 40, 0.0]):
+                 pcd_limit_range=[0, -40, -3, 70.4, 40, 0.0],
+                 completely_remove_other_classes=False,
+                 load_interval=1):
         super().__init__(
             data_root=data_root,
             ann_file=ann_file,
@@ -78,6 +84,11 @@ class KittiDataset(Custom3DDataset):
         assert self.modality is not None
         self.pcd_limit_range = pcd_limit_range
         self.pts_prefix = pts_prefix
+        self.completely_remove_other_classes = completely_remove_other_classes
+
+        self.data_infos = self.data_infos[::load_interval]
+        if hasattr(self, 'flag'):
+            self.flag = self.flag[::load_interval]
 
     def _get_pts_filename(self, idx):
         """Get point cloud filename according to the given index.
@@ -133,6 +144,10 @@ class KittiDataset(Custom3DDataset):
             annos = self.get_ann_info(index)
             input_dict['ann_info'] = annos
 
+        if 'road_plane' in info:
+            input_dict['road_plane'] = copy.deepcopy(info['road_plane'])
+            input_dict['calib'] = copy.deepcopy(info['calib'])
+
         return input_dict
 
     def get_ann_info(self, index):
@@ -175,11 +190,19 @@ class KittiDataset(Custom3DDataset):
         gt_bboxes = gt_bboxes[selected].astype('float32')
         gt_names = gt_names[selected]
 
+        if self.completely_remove_other_classes:
+            selected = self.keep_arrays_by_name(gt_names, self.CLASSES)
+            gt_bboxes = gt_bboxes[selected].astype('float32')
+            gt_names = gt_names[selected]
+            gt_bboxes_3d.tensor = gt_bboxes_3d.tensor[selected]
+            # No need to do for gt_labels_3d - generated from gt_names
+
         gt_labels = []
         for cat in gt_names:
             if cat in self.CLASSES:
                 gt_labels.append(self.CLASSES.index(cat))
             else:
+                assert not self.completely_remove_other_classes
                 gt_labels.append(-1)
         gt_labels = np.array(gt_labels).astype(np.int64)
         gt_labels_3d = copy.deepcopy(gt_labels)
@@ -294,15 +317,69 @@ class KittiDataset(Custom3DDataset):
                                                   submission_prefix)
         return result_files, tmp_dir
 
-    def evaluate(self,
-                 results,
-                 metric=None,
-                 logger=None,
-                 pklfile_prefix=None,
-                 submission_prefix=None,
-                 show=False,
-                 out_dir=None,
-                 pipeline=None):
+    def evaluate(self, results, *args, **kwargs):
+        """Just to evaluate both teacher & student."""
+        if 'teacher' in results[0] and 'student' in results[0]:
+            teacher_results = [tmp['teacher'] for tmp in results]
+            student_results = [tmp['student'] for tmp in results]
+
+            if ('results_2d' in teacher_results[0] and
+                    'results_3d' in teacher_results[0]):
+                teacher_res = dict(
+                    results_2d=self.evaluate(
+                        [tmp['results_2d'] for tmp in teacher_results],
+                        *args, **kwargs),
+                    results_3d=self.evaluate(
+                        [tmp['results_3d'] for tmp in teacher_results],
+                        *args, **kwargs))
+                student_res = dict(
+                    results_2d=self.evaluate(
+                        [tmp['results_2d'] for tmp in student_results],
+                        *args, **kwargs),
+                    results_3d=self.evaluate(
+                        [tmp['results_3d'] for tmp in student_results],
+                        *args, **kwargs))
+            else:
+                teacher_res = self.evaluate(teacher_results, *args, **kwargs)
+                student_res = self.evaluate(student_results, *args, **kwargs)
+
+            if 'logger' in kwargs and kwargs['logger'] is not None:
+                kwargs['logger'].info('Teacher: {}'.format(teacher_res))
+                kwargs['logger'].info('Student: {}'.format(student_res))
+            else:
+                print('Teacher: {}'.format(teacher_res))
+                print('Student: {}'.format(student_res))
+
+            if ('results_2d' in teacher_results[0] and
+                    'results_3d' in teacher_results[0]):
+                res_tea = dict()
+                res_tea.update(add_prefix(teacher_res['results_2d'], '2d'))
+                res_tea.update(add_prefix(teacher_res['results_3d'], '3d'))
+                res_stu = dict()
+                res_stu.update(add_prefix(student_res['results_2d'], '2d'))
+                res_stu.update(add_prefix(student_res['results_3d'], '3d'))
+
+                res = dict()
+                res.update(add_prefix(res_tea, 'tea'))
+                res.update(add_prefix(res_stu, 'stu'))
+                return res
+            else:
+                res = dict()
+                res.update(add_prefix(teacher_res, 'tea'))
+                res.update(add_prefix(student_res, 'stu'))
+                return res
+        else:
+            return self._evaluate(results, *args, **kwargs)
+
+    def _evaluate(self,
+                  results,
+                  metric=None,
+                  logger=None,
+                  pklfile_prefix=None,
+                  submission_prefix=None,
+                  show=False,
+                  out_dir=None,
+                  pipeline=None):
         """Evaluation in KITTI protocol.
 
         Args:
@@ -553,12 +630,12 @@ class KittiDataset(Custom3DDataset):
                 [sample_idx] * num_example, dtype=np.int64)
             det_annos += annos
 
-        if pklfile_prefix is not None:
-            # save file in pkl format
-            pklfile_path = (
-                pklfile_prefix[:-4] if pklfile_prefix.endswith(
-                    ('.pkl', '.pickle')) else pklfile_prefix)
-            mmcv.dump(det_annos, pklfile_path)
+        # if pklfile_prefix is not None:
+        #     # save file in pkl format
+        #     pklfile_path = (
+        #         pklfile_prefix[:-4] if pklfile_prefix.endswith(
+        #             ('.pkl', '.pickle')) else pklfile_prefix)
+        #     mmcv.dump(det_annos, pklfile_path)
 
         if submission_prefix is not None:
             # save file in submission format
@@ -701,6 +778,7 @@ class KittiDataset(Custom3DDataset):
             pipeline (list[dict], optional): raw data loading for showing.
                 Default: None.
         """
+        show = False
         assert out_dir is not None, 'Expect out_dir, got none.'
         pipeline = self._get_pipeline(pipeline)
         for i, result in enumerate(results):

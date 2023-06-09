@@ -6,6 +6,8 @@ from .loading import (LoadAnnotations3D, LoadImageFromFileMono3D,
                       LoadPointsFromMultiSweeps, NormalizePointsColor,
                       PointSegClassMapping)
 from .test_time_aug import MultiScaleFlipAug3D
+from .torchvision_transforms import (GaussianBlur, RandomAppliedTrans, ToNumpy,
+                                     TVToTensor)
 from .transforms_3d import (BackgroundPointsFilter, GlobalAlignment,
                             GlobalRotScaleTrans, IndoorPatchPointSample,
                             IndoorPointSample, ObjectNameFilter, ObjectNoise,
@@ -23,5 +25,6 @@ __all__ = [
     'PointSegClassMapping', 'MultiScaleFlipAug3D', 'LoadPointsFromMultiSweeps',
     'BackgroundPointsFilter', 'VoxelBasedPointSampler', 'GlobalAlignment',
     'IndoorPatchPointSample', 'LoadImageFromFileMono3D', 'ObjectNameFilter',
-    'RandomDropPointsColor', 'RandomJitterPoints'
+    'RandomDropPointsColor', 'RandomJitterPoints',
+    'ToNumpy', 'TVToTensor', 'RandomAppliedTrans', 'GaussianBlur'
 ]

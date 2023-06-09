@@ -1,10 +1,13 @@
 import copy
+import cv2
 import mmcv
 import numpy as np
 import os
+import logging
 
 from mmdet3d.core.bbox import box_np_ops
 from mmdet3d.datasets.pipelines import data_augment_utils
+from mmdet3d.utils import get_root_logger
 from mmdet.datasets import PIPELINES
 from ..builder import OBJECTSAMPLERS
 
@@ -98,6 +101,8 @@ class DataBaseSampler(object):
                  prepare,
                  sample_groups,
                  classes=None,
+                 use_road_plane=False,  # OpenPCDet
+                 limit_whole_scene=True,  # OpenPCDet
                  points_loader=dict(
                      type='LoadPointsFromFile',
                      coord_type='LIDAR',
@@ -111,13 +116,15 @@ class DataBaseSampler(object):
         self.classes = classes
         self.cat2label = {name: i for i, name in enumerate(classes)}
         self.label2cat = {i: name for i, name in enumerate(classes)}
+        self.use_road_plane = use_road_plane
+        self.limit_whole_scene = limit_whole_scene
         self.points_loader = mmcv.build_from_cfg(points_loader, PIPELINES)
 
         db_infos = mmcv.load(info_path)
+        
 
         # filter database infos
-        from mmdet3d.utils import get_root_logger
-        logger = get_root_logger()
+        logger = get_root_logger(log_level=logging.INFO, name='mmdet')
         for k, v in db_infos.items():
             logger.info(f'load {len(v)} {k} database infos')
         for prep_func, val in prepare.items():
@@ -187,7 +194,58 @@ class DataBaseSampler(object):
                 db_infos[name] = filtered_infos
         return db_infos
 
-    def sample_all(self, gt_bboxes, gt_labels, img=None):
+    @staticmethod
+    def put_boxes_on_road_planes(sampled_bboxes, sampled_points, input_dict):
+        assert len(sampled_bboxes) == len(sampled_points)
+        # copied from "database_sampler.py" in OpenPCDet
+
+        calib = input_dict['calib']
+        rect = calib['R0_rect'].astype(np.float32)
+        Trv2c = calib['Tr_velo_to_cam'].astype(np.float32)
+
+        a, b, c, d = input_dict['road_plane']
+        ## lidar to rect
+        sampled_boxes_gravity_center = sampled_bboxes.copy()[:, :3]
+        sampled_boxes_gravity_center[:, 2] = \
+            sampled_bboxes[:, 2] + sampled_bboxes[:, 5] * 0.5
+        sampled_boxes_gravity_center_hom = \
+            np.concatenate(
+                (sampled_boxes_gravity_center,
+                 np.ones((sampled_boxes_gravity_center.shape[0], 1),
+                         dtype=np.float32)),
+                axis=1)
+        sampled_boxes_gravity_center_rect_hom = \
+            sampled_boxes_gravity_center_hom @ Trv2c.T @ rect.T
+        center_cam = \
+            (sampled_boxes_gravity_center_rect_hom[:, :3] /
+             sampled_boxes_gravity_center_rect_hom[:, [3]])
+
+        ## OpenPCDet
+        cur_height_cam = (-d - a * center_cam[:, 0] - c * center_cam[:, 2]) / b
+        center_cam[:, 1] = cur_height_cam
+
+        ## rect to lidar
+        center_cam_hom = np.concatenate(
+            (center_cam, np.ones(
+                (center_cam.shape[0], 1), dtype=np.float32)), axis=1)
+        center_cam_lidar = center_cam_hom @ np.linalg.inv((rect @ Trv2c).T)
+        center_cam_lidar = center_cam_lidar[:, :3]
+
+        ## OpenPCDet
+        cur_lidar_height = center_cam_lidar[:, 2]
+        mv_height = (sampled_boxes_gravity_center[:, 2] -
+                     sampled_bboxes[:, 5] / 2 -
+                     cur_lidar_height)
+
+        ## Update heights
+        # print("Before", sampled_bboxes)
+        sampled_bboxes[:, 2] -= mv_height
+        for i in range(len(sampled_points)):
+            sampled_points[i].tensor[:, 2] -= mv_height[i]
+        # print("After", sampled_bboxes)
+        return sampled_bboxes, sampled_points
+
+    def sample_all(self, gt_bboxes, gt_labels, img=None, input_dict=None):
         """Sampling all categories of bboxes.
 
         Args:
@@ -211,8 +269,16 @@ class DataBaseSampler(object):
             class_label = self.cat2label[class_name]
             # sampled_num = int(max_sample_num -
             #                   np.sum([n == class_name for n in gt_names]))
-            sampled_num = int(max_sample_num -
-                              np.sum([n == class_label for n in gt_labels]))
+            # sampled_num = int(max_sample_num -
+            #                   np.sum([n == class_label for n in gt_labels]))
+            if self.limit_whole_scene:
+                # whether to include objects already in the scene when counting
+                # how many should be sampled. True by default mm3d.
+                sampled_num = int(max_sample_num -
+                                  np.sum([
+                                      n == class_label for n in gt_labels]))
+            else:
+                sampled_num = int(max_sample_num)
             sampled_num = np.round(self.rate * sampled_num).astype(np.int64)
             sampled_num_dict[class_name] = sampled_num
             sample_num_per_class.append(sampled_num)
@@ -260,8 +326,13 @@ class DataBaseSampler(object):
 
                 s_points_list.append(s_points)
 
+            if self.use_road_plane:
+                sampled_gt_bboxes, s_points_list = \
+                    self.put_boxes_on_road_planes(
+                        sampled_gt_bboxes, s_points_list, input_dict)
+
             gt_labels = np.array([self.cat2label[s['name']] for s in sampled],
-                                 dtype=np.long)
+                                 dtype=np.int64)
             ret = {
                 'gt_labels_3d':
                 gt_labels,

@@ -68,6 +68,8 @@ class RandomFlip3D(RandomFlip):
             images. If True, it will apply the same flip as that to 2D images.
             If False, it will decide whether to flip randomly and independently
             to that of 2D images. Defaults to True.
+        do_2d (bool, optional): whether to do 2D flip augmentation at all.
+            Defaults to True. If False, sync_2d must be false.
         flip_ratio_bev_horizontal (float, optional): The flipping probability
             in horizontal direction. Defaults to 0.0.
         flip_ratio_bev_vertical (float, optional): The flipping probability
@@ -76,12 +78,16 @@ class RandomFlip3D(RandomFlip):
 
     def __init__(self,
                  sync_2d=True,
+                 do_2d=True,
                  flip_ratio_bev_horizontal=0.0,
                  flip_ratio_bev_vertical=0.0,
                  **kwargs):
         super(RandomFlip3D, self).__init__(
             flip_ratio=flip_ratio_bev_horizontal, **kwargs)
         self.sync_2d = sync_2d
+        self.do_2d = do_2d
+        if not self.do_2d:
+            assert not sync_2d
         self.flip_ratio_bev_vertical = flip_ratio_bev_vertical
         if flip_ratio_bev_horizontal is not None:
             assert isinstance(
@@ -135,7 +141,8 @@ class RandomFlip3D(RandomFlip):
                 into result dict.
         """
         # filp 2D image and its annotations
-        super(RandomFlip3D, self).__call__(input_dict)
+        if self.do_2d:
+            super(RandomFlip3D, self).__call__(input_dict)
 
         if self.sync_2d:
             input_dict['pcd_horizontal_flip'] = input_dict['flip']
@@ -297,7 +304,8 @@ class ObjectSample(object):
                 img=img)
         else:
             sampled_dict = self.db_sampler.sample_all(
-                gt_bboxes_3d.tensor.numpy(), gt_labels_3d, img=None)
+                gt_bboxes_3d.tensor.numpy(), gt_labels_3d, img=None,
+                input_dict=input_dict)
 
         if sampled_dict is not None:
             sampled_gt_bboxes_3d = sampled_dict['gt_bboxes_3d']
@@ -323,7 +331,22 @@ class ObjectSample(object):
                 input_dict['img'] = sampled_dict['img']
 
         input_dict['gt_bboxes_3d'] = gt_bboxes_3d
-        input_dict['gt_labels_3d'] = gt_labels_3d.astype(np.long)
+        input_dict['gt_labels_3d'] = gt_labels_3d.astype(np.int64)
+        if self.sample_2d:
+            """If sampling 2D, need to do this because otherwise, the sampled
+            2D boxes are not added to labels.
+            If not sampling 2D, cannot do this because the sampled 3D boxes
+            don't exist for 2D boxes, so should not use the extended 3D labels.
+            """
+            input_dict['gt_labels'] = gt_labels_3d.astype(np.int64)  # added.
+
+        # Add sanity checks
+        if 'gt_bboxes_3d' in input_dict:
+            assert (len(input_dict['gt_bboxes_3d']) ==
+                    len(input_dict['gt_labels_3d']))
+        if 'gt_bboxes' in input_dict:
+            assert (len(input_dict['gt_bboxes']) ==
+                    len(input_dict['gt_labels']))
         input_dict['points'] = points
 
         return input_dict
@@ -572,9 +595,16 @@ class GlobalRotScaleTrans(object):
         noise_rotation = np.random.uniform(rotation[0], rotation[1])
 
         # if no bbox in input_dict, only rotate points
-        if len(input_dict['bbox3d_fields']) == 0:
+        # This method does not rotate if there is an empty set of boxes.
+        # However, RandomFlip adds an empty set of boxes for some reason...
+        # So, this now also checks if empty_box3d is the only bbox field,
+        # and rotates if that is the case.
+        if (len(input_dict['bbox3d_fields']) == 0
+                or (len(input_dict['bbox3d_fields']) == 1
+                    and 'empty_box3d' in input_dict['bbox3d_fields'])):
             rot_mat_T = input_dict['points'].rotate(noise_rotation)
             input_dict['pcd_rotation'] = rot_mat_T
+            input_dict['pcd_rotation_scalar'] = noise_rotation
             return
 
         # rotate points with bboxes
@@ -584,6 +614,10 @@ class GlobalRotScaleTrans(object):
                     noise_rotation, input_dict['points'])
                 input_dict['points'] = points
                 input_dict['pcd_rotation'] = rot_mat_T
+            else:
+                rot_mat_T = input_dict['points'].rotate(noise_rotation)
+                input_dict['pcd_rotation'] = rot_mat_T
+                input_dict['pcd_rotation_scalar'] = noise_rotation
 
     def _scale_bbox_points(self, input_dict):
         """Private function to scale bounding boxes and points.
@@ -719,7 +753,7 @@ class ObjectRangeFilter(object):
         # using mask to index gt_labels_3d will cause bug when
         # len(gt_labels_3d) == 1, where mask=1 will be interpreted
         # as gt_labels_3d[1] and cause out of index error
-        gt_labels_3d = gt_labels_3d[mask.numpy().astype(np.bool)]
+        gt_labels_3d = gt_labels_3d[mask.numpy().astype(bool)]
 
         # limit rad to [-pi, pi]
         gt_bboxes_3d.limit_yaw(offset=0.5, period=2 * np.pi)

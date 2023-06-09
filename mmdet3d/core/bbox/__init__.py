@@ -5,6 +5,7 @@ from .iou_calculators import (AxisAlignedBboxOverlaps3D, BboxOverlaps3D,
                               BboxOverlapsNearest3D,
                               axis_aligned_bbox_overlaps_3d, bbox_overlaps_3d,
                               bbox_overlaps_nearest_3d)
+from .match_costs import *
 from .samplers import (BaseSampler, CombinedSampler,
                        InstanceBalancedPosSampler, IoUBalancedNegSampler,
                        PseudoSampler, RandomSampler, SamplingResult)

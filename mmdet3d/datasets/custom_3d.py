@@ -5,6 +5,7 @@ import warnings
 from os import path as osp
 from torch.utils.data import Dataset
 
+from mmcv.parallel import DataContainer
 from mmdet.datasets import DATASETS
 from ..core.bbox import get_box_type
 from .pipelines import Compose
@@ -107,8 +108,12 @@ class Custom3DDataset(Dataset):
         if not self.test_mode:
             annos = self.get_ann_info(index)
             input_dict['ann_info'] = annos
-            if self.filter_empty_gt and ~(annos['gt_labels_3d'] != -1).any():
-                return None
+            if self.filter_empty_gt:
+                if ('gt_labels_3d' in annos
+                        and ~(annos['gt_labels_3d'] != -1).any()) or \
+                    ('gt_labels' in annos
+                        and ~(annos['gt_labels'] != -1).any()):
+                    return None
         return input_dict
 
     def pre_pipeline(self, results):
@@ -151,10 +156,21 @@ class Custom3DDataset(Dataset):
             return None
         self.pre_pipeline(input_dict)
         example = self.pipeline(input_dict)
-        if self.filter_empty_gt and \
-                (example is None or
-                    ~(example['gt_labels_3d']._data != -1).any()):
-            return None
+        if self.filter_empty_gt:
+            if example is None:
+                return None
+            if 'gt_labels_3d' in example:
+                if ((isinstance(example['gt_labels_3d'], np.ndarray)
+                     and ~(example['gt_labels_3d'] != -1).any())
+                        or (isinstance(example['gt_labels_3d'], DataContainer)
+                            and ~(example['gt_labels_3d']._data != -1).any())):
+                    return None
+            if 'gt_labels' in example:
+                if ((isinstance(example['gt_labels'], np.ndarray)
+                     and ~(example['gt_labels'] != -1).any())
+                        or (isinstance(example['gt_labels'], DataContainer)
+                            and ~(example['gt_labels']._data != -1).any())):
+                    return None
         return example
 
     def prepare_test_data(self, index):

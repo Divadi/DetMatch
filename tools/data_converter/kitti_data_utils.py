@@ -46,6 +46,15 @@ def get_image_path(idx,
     return get_kitti_info_path(idx, prefix, info_type, '.png', training,
                                relative_path, exist_check, use_prefix_id)
 
+def get_plane_path(idx,
+                   prefix,
+                   training=True,
+                   relative_path=True,
+                   exist_check=True,
+                   info_type='planes',
+                   use_prefix_id=False):
+    return get_kitti_info_path(idx, prefix, info_type, '.txt', training,
+                               relative_path, exist_check, use_prefix_id)
 
 def get_label_path(idx,
                    prefix,
@@ -146,7 +155,8 @@ def get_kitti_image_info(path,
                          extend_matrix=True,
                          num_worker=8,
                          relative_path=True,
-                         with_imageshape=True):
+                         with_imageshape=True,
+                         with_planes=True):
     """
     KITTI annotation format version 2:
     {
@@ -253,6 +263,24 @@ def get_kitti_image_info(path,
         if annotations is not None:
             info['annos'] = annotations
             add_difficulty_to_annos(info)
+            
+        if with_planes:
+            plane_file = get_plane_path(
+                idx, path, training, relative_path=False)
+            with open(plane_file, 'r') as f:
+                lines = f.readlines()
+            lines = [float(i) for i in lines[3].split()]
+            plane = np.asarray(lines)
+
+            # Ensure normal is always facing up, this is in the rectified
+            # camera coordinate
+            if plane[1] > 0:
+                plane = -plane
+
+            norm = np.linalg.norm(plane[0:3])
+            plane = plane / norm
+            info['road_plane'] = plane
+
         return info
 
     with futures.ThreadPoolExecutor(num_worker) as executor:

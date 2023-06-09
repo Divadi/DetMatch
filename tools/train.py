@@ -13,12 +13,13 @@ from os import path as osp
 
 from mmdet import __version__ as mmdet_version
 from mmdet3d import __version__ as mmdet3d_version
-from mmdet3d.apis import train_model
+from mmdet3d.apis import train_model, train_ssl_detector
 from mmdet3d.datasets import build_dataset
 from mmdet3d.models import build_model
 from mmdet3d.utils import collect_env, get_root_logger
 from mmdet.apis import set_random_seed
 from mmseg import __version__ as mmseg_version
+# torch.autograd.set_detect_anomaly(True); print("*" * 50, "anomaly detection")
 
 
 def parse_args():
@@ -122,7 +123,13 @@ def main():
 
     if args.autoscale_lr:
         # apply the linear scaling rule (https://arxiv.org/abs/1706.02677)
-        cfg.optimizer['lr'] = cfg.optimizer['lr'] * len(cfg.gpu_ids) / 8
+        if 'lr' in cfg.optimizer.keys():
+            cfg.optimizer['lr'] = cfg.optimizer['lr'] * len(cfg.gpu_ids) / 8
+        else:  # hybrid
+            for k in cfg.optimizer.keys():
+                if isinstance(cfg.optimizer[k], dict):
+                    cfg.optimizer[k]['lr'] = cfg.optimizer[k]['lr'] * len(
+                        cfg.gpu_ids) / 8
 
     # init distributed env first, since logger depends on the dist info.
     if args.launcher == 'none':
@@ -183,7 +190,11 @@ def main():
     model.init_weights()
 
     logger.info(f'Model:\n{model}')
-    datasets = [build_dataset(cfg.data.train)]
+    if 'train' in cfg.data:
+        datasets = [build_dataset(cfg.data.train)]
+    elif 'train_lab' in cfg.data and 'train_unlab' in cfg.data:
+        datasets = [build_dataset(cfg.data.train_lab),
+                    build_dataset(cfg.data.train_unlab)]
     if len(cfg.workflow) == 2:
         val_dataset = copy.deepcopy(cfg.data.val)
         # in case we use a dataset wrapper
@@ -209,14 +220,24 @@ def main():
             if hasattr(datasets[0], 'PALETTE') else None)
     # add an attribute for visualization convenience
     model.CLASSES = datasets[0].CLASSES
-    train_model(
-        model,
-        datasets,
-        cfg,
-        distributed=distributed,
-        validate=(not args.no_validate),
-        timestamp=timestamp,
-        meta=meta)
+    if 'train' in cfg.data:
+        train_model(
+            model,
+            datasets,
+            cfg,
+            distributed=distributed,
+            validate=(not args.no_validate),
+            timestamp=timestamp,
+            meta=meta)
+    elif 'train_lab' in cfg.data and 'train_unlab' in cfg.data:
+        train_ssl_detector(
+            model,
+            datasets,
+            cfg,
+            distributed=distributed,
+            validate=(not args.no_validate),
+            timestamp=timestamp,
+            meta=meta)
 
 
 if __name__ == '__main__':

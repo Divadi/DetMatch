@@ -115,6 +115,8 @@ data
 *.log.json
 work_dirs/
 exps/
+wandb/
+outputs/
 *~
 
 # Pytorch

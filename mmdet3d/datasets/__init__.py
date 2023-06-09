@@ -19,6 +19,7 @@ from .s3dis_dataset import S3DISSegDataset
 from .scannet_dataset import ScanNetDataset, ScanNetSegDataset
 from .semantickitti_dataset import SemanticKITTIDataset
 from .sunrgbd_dataset import SUNRGBDDataset
+from .teacher_student_ssl_dataset import TS_SSL_Dataset
 from .utils import get_loading_pipeline
 from .waymo_dataset import WaymoDataset
 
@@ -34,5 +35,6 @@ __all__ = [
     'ScanNetSegDataset', 'SemanticKITTIDataset', 'Custom3DDataset',
     'Custom3DSegDataset', 'LoadPointsFromMultiSweeps', 'WaymoDataset',
     'BackgroundPointsFilter', 'VoxelBasedPointSampler', 'get_loading_pipeline',
-    'RandomDropPointsColor', 'RandomJitterPoints', 'ObjectNameFilter'
+    'RandomDropPointsColor', 'RandomJitterPoints', 'ObjectNameFilter',
+    'TS_SSL_Dataset'
 ]

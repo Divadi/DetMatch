@@ -568,11 +568,18 @@ def eval_class(gt_annos,
     return ret_dict
 
 
+# def get_mAP(prec):
+#     sums = 0
+#     for i in range(0, prec.shape[-1], 4):
+#         sums = sums + prec[..., i]
+#     return sums / 11 * 100
+
+
 def get_mAP(prec):
     sums = 0
-    for i in range(0, prec.shape[-1], 4):
+    for i in range(1, prec.shape[-1]):
         sums = sums + prec[..., i]
-    return sums / 11 * 100
+    return sums / 40 * 100
 
 
 def print_str(value, *arg, sstream=None):
@@ -695,7 +702,7 @@ def kitti_eval(gt_annos,
             pred_alpha = True
             break
     for anno in gt_annos:
-        if anno['alpha'][0] != -10:
+        if len(anno['alpha']) != 0 and anno['alpha'][0] != -10:
             valid_alpha_gt = True
             break
     compute_aos = (pred_alpha and valid_alpha_gt)

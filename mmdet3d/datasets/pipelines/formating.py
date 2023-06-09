@@ -52,7 +52,8 @@ class DefaultFormatBundle(object):
         for key in [
                 'proposals', 'gt_bboxes', 'gt_bboxes_ignore', 'gt_labels',
                 'gt_labels_3d', 'attr_labels', 'pts_instance_mask',
-                'pts_semantic_mask', 'centers2d', 'depths'
+                'pts_semantic_mask', 'centers2d', 'depths',
+                'loaded_pred_2d_boxes', 'loaded_pred_2d_labels'
         ]:
             if key not in results:
                 continue
@@ -140,7 +141,8 @@ class Collect3D(object):
                             'pcd_vertical_flip', 'box_mode_3d', 'box_type_3d',
                             'img_norm_cfg', 'rect', 'Trv2c', 'P2', 'pcd_trans',
                             'sample_idx', 'pcd_scale_factor', 'pcd_rotation',
-                            'pts_filename', 'transformation_3d_flow')):
+                            'pts_filename', 'transformation_3d_flow',
+                            'pcd_rotation_scalar')):
         self.keys = keys
         self.meta_keys = meta_keys
 

@@ -11,6 +11,7 @@ MODELS = Registry('models', parent=MMCV_MODELS)
 VOXEL_ENCODERS = MODELS
 MIDDLE_ENCODERS = MODELS
 FUSION_LAYERS = MODELS
+SSL_MODULES = MODELS
 
 
 def build_backbone(cfg):
@@ -96,3 +97,7 @@ def build_middle_encoder(cfg):
 def build_fusion_layer(cfg):
     """Build fusion layer."""
     return FUSION_LAYERS.build(cfg)
+
+def build_ssl_module(cfg):
+    """Build SSL module."""
+    return SSL_MODULES.build(cfg)

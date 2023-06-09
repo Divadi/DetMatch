@@ -143,7 +143,8 @@ class LiDARInstance3DBoxes(BaseInstance3DBoxes):
             rot_mat_T = angle
             rot_sin = rot_mat_T[1, 0]
             rot_cos = rot_mat_T[0, 0]
-            angle = np.arctan2(rot_sin, rot_cos)
+            # angle = np.arctan2(rot_sin, rot_cos)
+            angle = torch.atan2(rot_sin, rot_cos)
 
         self.tensor[:, :3] = self.tensor[:, :3] @ rot_mat_T
         self.tensor[:, 6] += angle

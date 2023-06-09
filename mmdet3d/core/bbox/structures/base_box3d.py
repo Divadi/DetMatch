@@ -284,6 +284,10 @@ class BaseInstance3DBoxes(object):
         """int: Number of boxes in the current object."""
         return self.tensor.shape[0]
 
+    @property
+    def shape(self):
+        return self.tensor.shape
+
     def __repr__(self):
         """str: Return a strings that describes the object."""
         return self.__class__.__name__ + '(\n    ' + str(self.tensor) + ')'
@@ -342,6 +346,11 @@ class BaseInstance3DBoxes(object):
     def device(self):
         """str: The device of the boxes are on."""
         return self.tensor.device
+
+    def detach(self):
+        cloned = self.clone()
+        cloned.tensor.detach_()
+        return cloned
 
     def __iter__(self):
         """Yield a box as a Tensor of shape (4,) at a time.
