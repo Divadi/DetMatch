@@ -23,7 +23,7 @@ pip install numba==0.53.0
 ```
 
 ## Data Setup
-Please set-up the KITTI dataset as explained [here](https://github.com/open-mmlab/mmdetection3d/blob/1f79fc7b150f1a4b1d6cbb104ca5152b4c708d51/docs/2_new_data_model.md). Then, download the ssl splits, velodyne_reduced, and planes from [here]() and move it to `data/kitti`. The directory should look like:
+Please set-up the KITTI dataset as explained [here](https://github.com/open-mmlab/mmdetection3d/blob/1f79fc7b150f1a4b1d6cbb104ca5152b4c708d51/docs/2_new_data_model.md). Then, download the ssl splits, velodyne_reduced, and planes from [here](https://github.com/Divadi/DetMatch/releases/download/v0.1.0/kitti_data.tar.gz) and move it to `data/kitti`. The directory should look like:
 ```
 data
 ├── kitti
@@ -82,7 +82,7 @@ To, for instance, train on the 1% setting:
 By default, all methods are trained on 3 GPUs.
 
 ## Evaluation & Pre-Trained Models.
-By default, evaluation is done at the end of the training cycle. To access pre-trained models and training logs, please download the outputs folder from [here]().
+By default, evaluation is done at the end of the training cycle. To access pre-trained models and training logs, please download the outputs folders from [here](https://github.com/Divadi/DetMatch/releases/tag/v0.1.0).
 
 After downloading, a pre-trained model can be evaluated as such:
 ```
